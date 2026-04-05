@@ -3,47 +3,94 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 
-st.set_page_config(layout="wide")
+# Set agar tampilan dashboard lebar
+st.set_page_config(page_title="Bike Sharing Dashboard", layout="wide")
 
 # Menyiapkan Data
 day_df = pd.read_csv("dashboard/main_data.csv")
 hour_df = pd.read_csv("dashboard/hour.csv")
 
-st.header('Bike Sharing Dashboard')
+# Penyesuaian Nama Kolom & Tipe Data 
+date_col = 'date' if 'date' in day_df.columns else 'dteday'
+weather_col = 'weather_condition' if 'weather_condition' in day_df.columns else 'weathersit'
+cnt_col = 'total_count' if 'total_count' in day_df.columns else 'cnt'
 
-# Visualisasi 1 & 2 (Dibuat Berdampingan)
+day_df[date_col] = pd.to_datetime(day_df[date_col])
+hour_df[date_col] = pd.to_datetime(hour_df[date_col])
+
+# Merubah angka jadi teks di dashboard
+if day_df['season'].dtype in ['int64', 'float64']:
+    day_df['season'] = day_df['season'].map({1: 'Spring', 2: 'Summer', 3: 'Fall', 4: 'Winter'})
+if day_df[weather_col].dtype in ['int64', 'float64']:
+    day_df[weather_col] = day_df[weather_col].map({1: 'Cerah', 2: 'Berkabut', 3: 'Hujan/Salju Ringan', 4: 'Cuaca Buruk'})
+
+# SIDEBAR
+min_date = day_df[date_col].min()
+max_date = day_df[date_col].max()
+
+with st.sidebar:
+    st.title("Bike Sharing Filter")
+    st.write("Silakan pilih rentang waktu data:")
+    
+    # Widget kalender untuk filter waktu
+    start_date, end_date = st.date_input(
+        label='Rentang Waktu',
+        min_value=min_date,
+        max_value=max_date,
+        value=[min_date, max_date]
+    )
+
+# Filter dataframe berdasarkan input dari sidebar
+filtered_day_df = day_df[(day_df[date_col] >= pd.to_datetime(start_date)) & 
+                         (day_df[date_col] <= pd.to_datetime(end_date))]
+filtered_hour_df = hour_df[(hour_df[date_col] >= pd.to_datetime(start_date)) & 
+                           (hour_df[date_col] <= pd.to_datetime(end_date))]
+
+# MAIN DASHBOARD
+st.title('Bike Sharing Dashboard')
+st.markdown(f"**Menampilkan data dari: {start_date} hingga {end_date}**")
+
+# Menampilkan metrik utama
+total_sewa = filtered_day_df[cnt_col].sum()
+st.metric("Total Penyewaan Sepeda (Pada Rentang Waktu Ini)", value=f"{total_sewa:,}")
+st.markdown("---")
+
+# Visualisasi 1 & 2 (Menjawab Pertanyaan 1)
 col1, col2 = st.columns(2)
 
 with col1:
-    st.subheader('Rata-rata Penyewaan Berdasarkan Musim')
+    st.subheader('Pengaruh Musim Terhadap Penyewaan')
     fig, ax = plt.subplots(figsize=(10, 6))
-    colors_season = ["#D3D3D3", "#D3D3D3", "#005b96", "#D3D3D3"]
-    sns.barplot(x='season', y='cnt', data=day_df, palette=colors_season, ax=ax)
-    ax.set_xlabel('Musim (1: Springer, 2: Summer, 3: Fall, 4: Winter)')
-    ax.set_ylabel('Rata-rata Penyewaan')
+    colors_season = {'Spring': '#D3D3D3', 'Summer': '#D3D3D3', 'Fall': '#005b96', 'Winter': '#D3D3D3'}
+    sns.barplot(x='season', y=cnt_col, data=filtered_day_df, palette=colors_season, order=['Spring', 'Summer', 'Fall', 'Winter'], ax=ax)
+    ax.set_xlabel('Musim')
+    ax.set_ylabel('Total Penyewaan')
     st.pyplot(fig)
 
 with col2:
-    st.subheader('Rata-rata Penyewaan Berdasarkan Kondisi Cuaca')
+    st.subheader('Pengaruh Cuaca Terhadap Penyewaan')
     fig, ax = plt.subplots(figsize=(10, 6))
-    colors_weather = ["#005b96", "#D3D3D3", "#D3D3D3"]
-    sns.barplot(x='weathersit', y='cnt', data=day_df, palette=colors_weather, ax=ax)
-    ax.set_xlabel('Kondisi Cuaca (1: Cerah, 2: Mendung, 3: Hujan/Salju Ringan)')
-    ax.set_ylabel('Rata-rata Penyewaan')
+    colors_weather = {'Cerah': '#005b96', 'Berkabut': '#D3D3D3', 'Hujan/Salju Ringan': '#D3D3D3', 'Cuaca Buruk': '#D3D3D3'}
+    # Filter cuaca yang ada di data saat ini biar tidak error
+    existing_weather = filtered_day_df[weather_col].dropna().unique()
+    order_weather = [w for w in ['Cerah', 'Berkabut', 'Hujan/Salju Ringan', 'Cuaca Buruk'] if w in existing_weather]
+    
+    sns.barplot(x=weather_col, y=cnt_col, data=filtered_day_df, palette=colors_weather, order=order_weather, ax=ax)
+    ax.set_xlabel('Kondisi Cuaca')
+    ax.set_ylabel('Total Penyewaan')
     st.pyplot(fig)
 
-# Visualisasi 3: Jam Sibuk
+# Visualisasi 3: Jam Sibuk (Menjawab Pertanyaan 2)
 st.subheader('Tren Jam Sibuk Penyewaan Sepeda: Hari Kerja vs Hari Libur')
 fig, ax = plt.subplots(figsize=(12, 6))
 
-# Ubah angka 0 & 1 jadi teks biar legendanya bagus
-hour_df['Keterangan'] = hour_df['workingday'].map({0: 'Hari Libur', 1: 'Hari Kerja'})
+filtered_hour_df['Keterangan'] = filtered_hour_df['workingday'].map({0: 'Hari Libur', 1: 'Hari Kerja'})
 
 sns.pointplot(
     x='hr', 
-    y='cnt', 
+    y='cnt' if 'cnt' in filtered_hour_df.columns else cnt_col, 
     hue='Keterangan', 
-    data=hour_df, 
+    data=filtered_hour_df, 
     palette={'Hari Libur': '#ff8c8c', 'Hari Kerja': '#5dade2'}, 
     ax=ax
 )
